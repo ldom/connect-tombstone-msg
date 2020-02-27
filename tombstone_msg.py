@@ -15,8 +15,6 @@ def connector_name_from_key(key):
 
 
 def create_tombstone_msg(kafka_url, connector_name, offset_storage_topic):
-    print(f"create_tombstone_msg({kafka_url}, {connector_name}, {offset_storage_topic})")
-
     # it'd be nice to get the offset_storage_topic name programmatically
     # but it doesn't seem to be possible using the Connect REST API
 
@@ -28,6 +26,7 @@ def create_tombstone_msg(kafka_url, connector_name, offset_storage_topic):
                              consumer_timeout_ms=2500,
                              )
 
+    messages_written = []
     latest_messages = {} # map of message key --> partition number
 
     for message in consumer:
@@ -39,11 +38,12 @@ def create_tombstone_msg(kafka_url, connector_name, offset_storage_topic):
     TIMEOUT = 10
 
     for message_key, partition in latest_messages.items():
-        print(f"writing tombstone msg for {message_key}")
+        messages_written.append(message_key)
+        # print(f"writing tombstone msg for {message_key}")
         future = producer.send(offset_storage_topic, key=message_key, value=None, partition=partition)
         try:
             future.get(timeout=TIMEOUT)
         except KafkaError:
             raise RuntimeError(f"Failed to write tombstone message within the imparted time ({TIMEOUT}s)")
 
-    print("Done.")
+    return messages_written

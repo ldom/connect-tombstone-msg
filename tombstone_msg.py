@@ -25,24 +25,25 @@ def create_tombstone_msg(kafka_url, connector_name, offset_storage_topic):
                              bootstrap_servers=kafka_url,
                              auto_offset_reset='earliest',
                              enable_auto_commit=False,
-                             consumer_timeout_ms=100,
+                             consumer_timeout_ms=2500,
                              )
-    latest_msg_partition = None
-    message_key = None
+
+    latest_messages = {} # map of message key --> partition number
 
     for message in consumer:
         if connector_name_from_key(message.key) == connector_name:
-            latest_msg_partition = message.partition
-            message_key = message.key
+            latest_messages[message.key] = message.partition
 
-    # write a null tombstone msg to the proper broker
+    # write a null tombstone msg to the proper broker for each unique key used by the connector
     producer = KafkaProducer(bootstrap_servers=kafka_url)
-    future = producer.send(offset_storage_topic, key=message_key, value=None, partition=latest_msg_partition)
-
     TIMEOUT = 10
-    try:
-        future.get(timeout=TIMEOUT)
-    except KafkaError:
-        raise RuntimeError(f"Failed to write tombstone message within the imparted time ({TIMEOUT}s)")
+
+    for message_key, partition in latest_messages.items():
+        print(f"writing tombstone msg for {message_key}")
+        future = producer.send(offset_storage_topic, key=message_key, value=None, partition=partition)
+        try:
+            future.get(timeout=TIMEOUT)
+        except KafkaError:
+            raise RuntimeError(f"Failed to write tombstone message within the imparted time ({TIMEOUT}s)")
 
     print("Done.")
